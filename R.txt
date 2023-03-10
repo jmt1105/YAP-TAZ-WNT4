@@ -1,0 +1,721 @@
+markerdata <- ScaleData(scedata, features = as.character(unique(significant.markers$gene)), assay = "RNA")
+p1 <-DoHeatmap(markerdata,
+               features = as.character(unique(significant.markers$gene)),
+               group.by = "celltype",
+               assay = 'RNA',
+               label = F)
+FeaturePlot(scedata, features = c("Dpt",
+                                  "Pdgfra"))#FB
+
+#GO pathway 
+diff_gene <- read.csv(file=".CSV")
+rt=diff_gene
+genes=as.vector(rt[,8])	
+entrezIDs=mget(genes, org.Mm.egSYMBOL2EG, ifnotfound=NA)	
+View(entrezIDs)
+entrezIDs=as.character(entrezIDs)	
+rt=cbind(rt,entrezID=entrezIDs)		
+rt=rt[is.na(rt[,"entrezID"])==F,]	
+gene=rt$entrezID
+GOpathway=enrichGO(gene = gene,
+                   OrgDb = org.Mm.eg.db, 
+                   pvalueCutoff =1,	
+                   qvalueCutoff = 1,	
+                   ont="all",	
+                   readable =T)	
+GOpathway1=as.data.frame(GOpathway)
+View(GOpathway1)
+GOpathway.sig<-GOpathway1[(GOpathway1$pvalue<0.01 & GOpathway1$p.adjust<0.01),]
+write.table(GOpathway1,file="GOpathwayT.txt",sep="\t",quote=F,row.names = F)
+
+library(ggplot2)
+library(forcats)
+KEGG$Description <- as.factor(KEGG$Description)
+KEGG$Description <- fct_inorder(KEGG$Description)
+ggplot(KEGG,aes(x = -1*log10(pvalue), 
+                y = Description, group_by(group),
+                size = Count,
+                colour=pvalue)) +
+  geom_point(shape = 20) +                    
+  labs(x = "-log[10](pvalue)", y = "Pathway")+          
+  scale_colour_continuous(                   
+    name="pvalue",                        
+    low="red",                              
+    high="green")+
+  scale_radius(                              
+    range=c(6,12),                             
+    name="Count")+                             
+  guides(   
+    color = guide_colorbar(order = 2),        
+    size = guide_legend(order = 1)
+  )+
+  theme_bw()+                                     
+  theme(legend.direction = "horizontal", legend.position = "top")+
+  scale_y_discrete(position = "right")
+
+table(scedata$groups)
+prop.table(table(Idents(scedata)))
+table(Idents(scedata), scedata$groups)
+Cellratio <- prop.table(table(Idents(scedata), scedata$groups), margin = 2)
+Cellratio
+Cellratio <- as.data.frame(Cellratio)
+Cellratio1 <- Cellratio[1:12,]
+Cellratio2 <- Cellratio[13:24,]
+colourCount = length(unique(Cellratio$Var1))
+library(ggplot2)
+ggplot(Cellratio1) + 
+  geom_bar(aes(x =Var2, y= Freq, fill = Var1),stat = "identity",width = 0.7,size = 0.5,colour = '#222222')+ 
+  theme_classic() +
+  labs(x='Sample',y = 'Ratio')+
+  coord_flip()+
+  theme(panel.border = element_rect(fill=NA,color="black", size=0.5, linetype="solid"))+ coord_polar(theta = 'y', start = 0, direction = 1)
+ggplot(Cellratio2) + 
+  geom_bar(aes(x =Var2, y= Freq, fill = Var1),stat = "identity",width = 0.7,size = 0.5,colour = '#222222')+ 
+  theme_classic() +
+  labs(x='Sample',y = 'Ratio')+
+  coord_flip()+
+  theme(panel.border = element_rect(fill=NA,color="black", size=0.5, linetype="solid"))+ coord_polar(theta = 'y', start = 0, direction = 1)
+diff_gene <- FindMarkers(scedata, group.by = "groups", ident.1 = "DSS", ident.2 = "Con",
+                         verbose = FALSE,logfc.threshold = 0,min.pct = 0,pseudocount.use = 0.01)
+write.csv(diff_gene,"diff_gene_DSS_Con.csv",row.names = T)
+
+VolcanoPlot=function(dif, log2FC=log2(2), padj=0.05, 
+                     label.symbols=NULL, label.max=30,
+                     cols=c("#497aa2", "#ae3137"), title=""){
+  if( all( !c("log2FoldChange", "padj", "symbol") %in% colnames(dif) )){
+    stop("Colnames must include: log2FoldChange, padj, symbol")
+  }
+  rownames(dif)=dif$symbol
+  
+  # (1) define up and down
+  dif$threshold="ns";
+  dif[which(dif$log2FoldChange > log2FC & dif$padj <padj),]$threshold="up";
+  dif[which(dif$log2FoldChange < (-log2FC) & dif$padj < padj),]$threshold="down";
+  dif$threshold=factor(dif$threshold, levels=c('down','ns','up'))
+  #head(dif)
+  #
+  tb2=table(dif$threshold); print(tb2)
+  library(ggplot2)
+  # (2) plot
+  g1 = ggplot(data=dif, aes(x=log2FoldChange, y=-log10(padj), color=threshold)) +
+    geom_point(alpha=0.8, size=0.8) +
+    geom_vline(xintercept = c(-log2FC, log2FC), linetype=2, color="grey")+
+    geom_hline(yintercept = -log10(padj), linetype=2, color="grey")+
+    labs(title= ifelse(""==title, "", paste("DEG:", title)))+
+    xlab(bquote(Log[2]*FoldChange))+
+    ylab(bquote(-Log[10]*italic(P.adj)) )+
+    theme_classic(base_size = 14) +
+    theme(legend.box = "horizontal",
+          legend.position="top",
+          legend.spacing.x = unit(0, 'pt'),
+          legend.text = element_text( margin = margin(r = 20) ),
+          legend.margin=margin(b= -10, unit = "pt"),
+          plot.title = element_text(hjust = 0.5, size=10)
+    ) +
+    scale_color_manual('',labels=c(paste0("down(",tb2[[1]],')'),'ns',
+                                   paste0("up(",tb2[[3]],')' )),
+                       values=c(cols[1], "grey", cols[2]) )+
+    guides(color=guide_legend(override.aes = list(size=3, alpha=1))); g1;
+  # (3)label genes
+  if(is.null(label.symbols)){
+    dif.sig=dif[which(dif$threshold != "ns" ), ]
+    len=nrow(dif.sig)
+    if(len<label.max){
+      label.symbols=rownames(dif.sig)
+    }else{
+      dif.sig=dif.sig[order(dif.sig$log2FoldChange), ]
+      dif.sig= rbind(dif.sig[1:(label.max/2),], dif.sig[(len-label.max/2):len,])
+      label.symbols=rownames(dif.sig)
+    }
+  }
+  dd_text = dif[label.symbols, ]
+  print((dd_text))
+  # add text
+  library(ggrepel)
+  g1 + geom_text_repel(data=dd_text,
+                       aes(x=log2FoldChange, y=-log10(padj), label=row.names(dd_text)),
+                       #size=2.5, 
+                       colour="black",alpha=1)
+}
+
+dif<-read.csv(file="diff_gene_DSS_Con.csv")
+VolcanoPlot(dif, padj=0.05, title="DSS vs cON", label.max = 6, cols=c("blue", "red"))
+VolcanoPlot(dif, padj=0.05, title="DSS vs WT ", 
+            label.symbols=dif[ ((abs(dif$log2FoldChange) > 2) & (dif$padj < 1e-50) ) | 
+                                 abs(dif$log2FoldChange) > 4,]$symbol )
+VolcanoPlot(dif, padj=0.05, title="DSS vs Con", label.symbols=dif$symbol[c(51,48,9)] )
+
+keggpathway1 <- enrichKEGG(rt$entrezID, organism = 'rno', keyType = 'kegg', pvalueCutoff = 0.5, pAdjustMethod = 'BH', minGSSize = 3, maxGSSize = 500, qvalueCutoff = 1, use_internal_data = FALSE)      
+keggpathway=as.data.frame(keggpathway1)
+write.table(keggpathway,"keggpathwayDSS_Con.txt") 
+
+#GSEA
+df = read.csv(".csv",header = T)
+View(df)
+head(df)
+df_id<-bitr(df$SYMBOL, 
+            fromType = "SYMBOL",
+            toType = "ENTREZID",
+            OrgDb = "org.Mm.eg.db")
+df$SYMBOL <-df$SYMBOL
+df_all<-merge(df,df_id,by="SYMBOL",all=F)
+View(df_all)
+head(df_all)
+dim(df_all) 
+df_all_sort <- df_all[order(df_all$log2FC, decreasing = T),]
+View(df_all_sort)
+gene_fc = df_all_sort$log2FC
+head(gene_fc)
+names(gene_fc) <- df_all_sort$ENTREZID
+
+GO <- gseGO(
+  gene_fc, #gene_fc
+  ont = "ALL",# "BP"、"MF"和"CC"或"ALL"
+  OrgDb = org.Mm.eg.db,
+  keyType = "ENTREZID",
+  pvalueCutoff = 1,
+  pAdjustMethod = "BH",)      
+GO1=as.data.frame(GO)
+write.csv(GO1,"GO_GSEA.csv") 
+
+paths <- c("GO:0030111",
+           "GO:0048661","GO:0030225","GO:0004896","GO:0050673")
+gseaplot2(GO,paths,color = colorspace::rainbow_hcl(4),base_size = 20, 
+          subplots = 1:3, 
+          pvalue_table = T) 
+
+load(file=".RData")
+cellchat <- computeCommunProb(cellchat, raw.use = T, type = "truncatedMean",trim = 0.01)
+cellchat <- filterCommunication(cellchat, min.cells = 1)
+df.net <- subsetCommunication(cellchat)
+cellchat <- netAnalysis_computeCentrality(cellchat, slot.name = "netP") 
+netAnalysis_signalingRole_network(cellchat, signaling = pathways.show[], 
+                                  width = 8, height = 2.5, font.size = 10)
+gg1 <- netAnalysis_signalingRole_scatter(cellchat)
+gg2 <- netAnalysis_signalingRole_scatter(cellchat, signaling = c("WNT"))
+gg1 + gg2
+save(cellchat, file = "cellchat.RData")
+
+load(file="Concellchat.RData")
+load(file="DSScellchat.RData")
+Concellchat <-netAnalysis_computeCentrality(object = Concellchat,slot.name = "netP" ,net = NULL, net.name = NULL, thresh = 0.05)
+DSScellchat <-netAnalysis_computeCentrality(object = DSScellchat,slot.name = "netP" ,net = NULL, net.name = NULL, thresh = 0.05)
+object.list <- list(Con = Concellchat,   DSS = DSScellchat)
+cellchat <- mergeCellChat(object.list, add.names = names(object.list))
+
+gg1 <- compareInteractions(cellchat, show.legend = F, group = c(1,2))
+gg2 <- compareInteractions(cellchat, show.legend = F, group = c(1,2), measure = "weight")
+gg1 + gg2
+
+num.link <- sapply(object.list, function(x) {rowSums(x@net$count) + colSums(x@net$count)-diag(x@net$count)})
+weight.MinMax <- c(min(num.link), max(num.link)) # control the dot size in the different datasets
+gg <- list()
+for (i in 1:length(object.list)) {
+  gg[[i]] <- netAnalysis_signalingRole_scatter(object.list[[i]], title = names(object.list)[i], weight.MinMax = weight.MinMax)
+}
+
+
+rankSimilarity(cellchat, type = "functional")
+rankSimilarity(cellchat, type = "structural")
+
+
+pathway.union <- union(object.list[[i]]@netP$pathways, object.list[[i+1]]@netP$pathways)
+ht1 = netAnalysis_signalingRole_heatmap(object.list[[i]], pattern = "outgoing", signaling = pathway.union[c(1,2,3,4,5,6,7,8,9,10)], title = names(object.list)[i], width = 5, height = 3)
+ht2 = netAnalysis_signalingRole_heatmap(object.list[[i+1]], pattern = "outgoing", signaling = pathway.union[c(1,2,3,4,5,6,7,8,9,10)], title = names(object.list)[i+1], width = 5, height = 3)
+
+draw(ht1 + ht2, ht_gap = unit(0.5, "cm"))
+
+ht1 = netAnalysis_signalingRole_heatmap(object.list[[i]], pattern = "incoming", signaling = pathway.union[c(12,19,29,31,32,36,37,48,49,52)], title = names(object.list)[i], width = 5, height = 3, color.heatmap = "GnBu")
+ht2 = netAnalysis_signalingRole_heatmap(object.list[[i+1]], pattern = "incoming", signaling = pathway.union[c(12,19,29,31,32,36,37,48,49,52)], title = names(object.list)[i+1], width = 5, height = 3, color.heatmap = "GnBu")
+draw(ht1 + ht2, ht_gap = unit(0.5, "cm"))
+
+
+ht1 = netAnalysis_signalingRole_heatmap(object.list[[i]], pattern = "all", signaling = pathway.union, title = names(object.list)[i], width = 5, height = 25, color.heatmap = "OrRd")
+ht2 = netAnalysis_signalingRole_heatmap(object.list[[i+1]], pattern = "all", signaling = pathway.union, title = names(object.list)[i+1], width = 5, height = 25, color.heatmap = "OrRd")
+draw(ht1 + ht2, ht_gap = unit(0.5, "cm"))
+
+
+net.up<-read.csv("net.up.csv")
+pairLR.use.up = net.up[, "interaction_name", drop = F]
+gg1 <- netVisual_bubble(cellchat, pairLR.use = pairLR.use.wnt, sources.use = c(7), targets.use = c(1,2,3,4,5,6,8,9), comparison = c(1, 2),  angle.x = 45, remove.isolate = T,title.name = paste0("Up-regulated signaling in ", names(object.list)[2]))
+gg1 <- netVisual_bubble(cellchat, pairLR.use = pairLR.use.up, sources.use = c(1,2,3,5,6,7,8), targets.use = c(4), comparison = c(1, 2),  angle.x = 45, remove.isolate = T,title.name = paste0("Up-regulated signaling in ", names(object.list)[2]))
+ggsave("Rplot17.TIFF",gg1, width = 6, height = 28)
+
+par(mfrow = c(1,2), xpd=TRUE)
+netVisual_chord_gene(object.list[[2]], sources.use = c(1,2,3,5,6,7,8),targets.use = c(2), slot.name = 'net', net = net.up, lab.cex = 0.8, 
+                     small.gap = 1, title.name = paste0("Up-regulated signaling in ", names(object.list)[2]))
+netVisual_chord_gene(object.list[[2]], sources.use = c(4),targets.use = c(1,2,3,5,6,7,8), slot.name = 'net', net = net.up, lab.cex = 0.8, 
+                     small.gap = 1, title.name = paste0("Up-regulated signaling in ", names(object.list)[2]))
+
+
+netVisual_chord_gene(object.list[[1]], sources.use = c(2),targets.use = c(1,3,4), slot.name = 'net', net = net.down, lab.cex = 0.8, small.gap = 3.5, title.name = paste0("Down-regulated signaling in ", names(object.list)[2]))
+
+
+pathways.show <- c("WNT") 
+weight.max <- getMaxWeight(object.list, slot.name = c("netP"), attribute = pathways.show) # control the edge weights across different datasets
+par(mfrow = c(1,2), xpd=TRUE)
+for (i in 1:length(object.list)) {
+  netVisual_aggregate(object.list[[i]], signaling = pathways.show, layout = "circle", edge.weight.max = weight.max[1], edge.width.max = 10, signaling.name = paste(pathways.show, names(object.list)[i]))
+}
+
+pathways.show <- c("WNT") 
+par(mfrow = c(1,2), xpd=TRUE)
+for (i in 1:length(object.list)) {
+  netVisual_aggregate(object.list[[i]], signaling = pathways.show, layout = "chord", signaling.name = paste(pathways.show, names(object.list)[i]))
+}
+
+cellchat@meta$datasets = factor(cellchat@meta$datasets, levels = c("Con", "DSS")) 
+plotGeneExpression(cellchat, signaling = "WNT", split.by = "datasets", colors.ggplot = T)
+
+
+
+
+
+Inscore_scedata <- AddModuleScore(scedata,
+                                  features = gene_module_13,
+                                  ctrl = 100,
+                                  name = "gene_module_13" )
+Inscore_DSS <- AddModuleScore(DSS,
+                              features = Inflammatory_response,
+                              ctrl = 100,
+                              name = "Inflammatory_response" )
+Inscore_Inflam <- AddModuleScore(Inflam,
+                                 features = WNT,
+                                 ctrl = 100,
+                                 name = "WNT" )
+Inscore_TA <- AddModuleScore(TA,
+                             features = WNT,
+                             ctrl = 100,
+                             name = "WNT" )
+colnames(Inscore_scedata@meta.data)
+colnames(Inscore_scedata@meta.data)[16] <- 'gene_module_13' 
+colnames(Inscore_DSS@meta.data)
+colnames(Inscore_DSS@meta.data)[9] <- 'Inflammatory_response' 
+colnames(Inscore_Inflam@meta.data)
+colnames(Inscore_Inflam@meta.data)[12] <- 'WNT'
+colnames(Inscore_SMCs@meta.data)
+colnames(Inscore_SMCs@meta.data)[11] <- 'YAP'
+VlnPlot(Inscore_TA,features = 'WNT', 
+        pt.size = 0, adjust = 2,group.by = "group")
+VlnPlot(Inscore_Enterocyte,features = 'cell_differentiation1', 
+        pt.size = 0, adjust = 2,group.by = "orig.ident")
+
+VlnPlot(Inscore_Normal,features = 'YAP_TAZ_Target_features', 
+        group.by = "celltype")
+
+mydata_scedata<- FetchData(Inscore_scedata,vars = c("UMAP_1","UMAP_2","gene_module_13"))
+mydata_DSS<- FetchData(Inscore_DSS,vars = c("UMAP_1","UMAP_2","Inflammatory_response"))
+mydata_Inflam<- FetchData(Inscore_Inflam,vars = c("UMAP_1","UMAP_2","WNT"))
+a <- ggplot(mydata_scedata,aes(x = UMAP_1,y =UMAP_2,colour = gene_module_13))+
+  geom_point(size = 1)+scale_color_gradientn(values = seq(0,1,0.2),
+                                             colours = c('#333366',"#6666FF",'#CC3333','#FFCC33'))
+p1 <-a+ theme_bw() + theme(panel.grid.major = element_blank(),
+                           panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"),
+                           panel.border = element_rect(fill=NA,color="black", size=1, linetype="solid"))+labs(title = "gene_module_13")
+p1
+b <- ggplot(mydata_DSS,aes(x = UMAP_1,y =UMAP_2,colour = Inflammatory_response))+
+  geom_point(size = 1)+scale_color_gradientn(values = seq(0,1,0.2),
+                                             colours = c('#333366',"#6666FF",'#CC3333','#FFCC33'))
+p2 <-b+ theme_bw() + theme(panel.grid.major = element_blank(),
+                           panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"),
+                           panel.border = element_rect(fill=NA,color="black", size=1, linetype="solid"))+labs(title = "DSS")
+p1+p2
+
+
+
+P1 <- ggplot(data.frame(UninjSMCs@meta.data, UninjSMCs@reductions$umap@cell.embeddings), aes(UMAP_1, UMAP_2, color=AUC)
+) + geom_point( size=2
+) + scale_color_gradientn(values = seq(0,1,0.2),
+                          colours = c('#333366',"#6666FF",'#CC3333','#FFCC33')) +  
+  theme_light(base_size = 15)+labs(title = "UninjSMCs_Yap_Taz_Target_Genes")+
+  theme(panel.border = element_rect(fill=NA,color="black", size=1, linetype="solid"))+
+  theme(plot.title = element_text(hjust = 0.3))
+
+P2 <- ggplot(data.frame(GFPSMCs@meta.data, GFPSMCs@reductions$umap@cell.embeddings), aes(UMAP_1, UMAP_2, color=AUC)
+) + geom_point( size=2
+) + scale_color_gradientn(values = seq(0,1,0.2),
+                          colours = c('#333366',"#6666FF",'#CC3333','#FFCC33'))  + 
+  theme_light(base_size = 15)+labs(title = "GFPSMCs_Yap_Taz_Target_Genes")+
+  theme(panel.border = element_rect(fill=NA,color="black", size=1, linetype="solid"))+
+  theme(plot.title = element_text(hjust = 0.3))
+P1+P2
+
+
+
+
+
+#trajectory analysis using monocle3##################
+
+
+data<-GetAssayData(SMC,assay ='RNA',slot ='counts')
+cell_metadata <-SMC@meta.data
+gene_annotation <-data.frame(gene_short_name =rownames(data))
+rownames(gene_annotation)<-rownames(data)
+cds <-new_cell_data_set(data,cell_metadata =cell_metadata,gene_metadata =gene_annotation)
+
+cds <- preprocess_cds(cds, num_dim = 30)
+plot_pc_variance_explained(cds)
+
+cds <- reduce_dimension(cds,preprocess_method = 'PCA')
+plot_cells(cds)
+colnames(colData(cds))
+plot_cells(cds, color_cells_by="orig.ident",cell_size = 2,
+           group_label_size = 3 )
+
+plot_cells(cds, color_cells_by="celltype",cell_size = 2,
+           group_label_size = 3 )
+plot_cells(cds, color_cells_by="orig.ident", cell_size = 2,label_cell_groups=FALSE)
+plot_cells(cds, color_cells_by="celltype", cell_size = 2,label_cell_groups=FALSE)
+
+
+plot_cells(
+  cds,
+  x = 1,
+  y = 2,
+  reduction_method = c("UMAP", "tSNE", "PCA", "LSI", "Aligned"),
+  color_cells_by = "orig.ident",
+  group_cells_by = c("cluster", "partition"),
+  genes = NULL,
+  show_trajectory_graph = TRUE,
+  trajectory_graph_color = "grey28",
+  trajectory_graph_segment_size = 0.75,
+  norm_method = c("log", "size_only"),
+  label_cell_groups = TRUE,
+  label_groups_by_cluster = TRUE,
+  group_label_size = 2,
+  labels_per_group = 1,
+  label_branch_points = TRUE,
+  label_roots = TRUE,
+  label_leaves = TRUE,
+  graph_label_size = 2,
+  cell_size = 0.35,
+  alpha = 1,
+  min_expr = 0.1,
+  rasterize = FALSE,
+  scale_to_range = TRUE,
+  label_principal_points = FALSE
+)
+plot_cells(cds,
+           color_cells_by = "pseudotime",
+           label_cell_groups=FALSE,
+           label_leaves=FALSE,
+           label_branch_points=FALSE,
+           graph_label_size=1.5)
+
+pr_graph_test_res <- graph_test(cds, neighbor_graph="knn", cores=8)
+pr_deg_ids <- row.names(subset(pr_graph_test_res, q_value < 0.05))
+
+gene_module_df <- find_gene_modules(cds[pr_deg_ids,], resolution=1e-2)
+
+cell_group_df <- tibble::tibble(cell=row.names(colData(cds)), 
+                                cell_group=partitions(cds)[colnames(cds)])
+agg_mat <- aggregate_gene_expression(cds, gene_module_df, cell_group_df)
+row.names(agg_mat) <- stringr::str_c("Module ", row.names(agg_mat))
+colnames(agg_mat) <- stringr::str_c("celltype", colnames(agg_mat))
+
+pheatmap::pheatmap(agg_mat, cluster_rows=TRUE, cluster_cols=TRUE,
+                   scale="column", clustering_method="ward.D2",
+                   fontsize=6)
+
+write.csv(gene_module_df, file = "gene_module_df.csv", row.names = T)
+plot_cells(cds, genes=gene_module_df %>% filter(module %in% c(2, 5, 9, 10, 18,19,21,39,30)),
+           group_cells_by="partition",
+           color_cells_by="partition",
+           show_trajectory_graph=FALSE)
+
+plot_cells(cds,
+           color_cells_by = "celltype",
+           label_groups_by_cluster=FALSE,
+           label_leaves=FALSE,
+           label_branch_points=FALSE)
+
+
+
+
+
+
+
+
+
+
+
+
+dbFiles <- c("https://resources.aertslab.org/cistarget/databases/mus_musculus/mm9/refseq_r45/mc9nr/gene_based/mm9-500bp-upstream-7species.mc9nr.genes_vs_motifs.rankings.feather",
+             "https://resources.aertslab.org/cistarget/databases/mus_musculus/mm9/refseq_r45/mc9nr/gene_based/mm9-tss-centered-10kb-7species.mc9nr.genes_vs_motifs.rankings.feather")
+for(featherURL in dbFiles)
+{
+  download.file(featherURL, destfile=basename(featherURL)) 
+}
+
+dbFiles_500bp <- importRankings("mm9-500bp-upstream-7species.mc9nr.feather")
+dbFiles_10kb <- importRankings("mm9-tss-centered-10kb-7species.mc9nr.feather") 
+
+exprMat <- as.matrix(scedata@assays$RNA@data)
+exprMat[1:4,1:4]
+cellInfo <- scedata@meta.data[,c("celltype","nCount_RNA","nFeature_RNA","group")]
+colnames(cellInfo) <- c('CellType', 'nGene' ,'nUMI','group')
+head(cellInfo)
+table(cellInfo$CellType)
+colVars <- list(group=c("Healthy"="magenta4", 
+                        "Inflamed"="red",
+                        "Enterocytes"="hotpink","SMCs"="blue","TA"="green"))
+colVars$group <- colVars$group[intersect(names(colVars$group), cellInfo$group)]
+plot.new(); legend(0,1, fill=colVars$group, legend=names(colVars$group))
+
+org <- "hgnc" # or hgnc, or dmel
+dbDir <- "cisTarget_databases" # RcisTarget databases location
+dbDir <- "D:/For research/R work package/sc human colon/scenic" # RcisTarget databases location
+myDatasetTitle <- "SCENIC example on human colon " # choose a name for your analysis
+data(defaultDbNames)
+dbs <- defaultDbNames[[org]]
+scenicOptions <- initializeScenic(org=org, dbDir=dbDir, dbs=dbs, datasetTitle=myDatasetTitle, nCores=10) 
+scenicOptions@inputDatasetInfo$cellInfo <- cellInfo
+scenicOptions@inputDatasetInfo$colVars <- colVars
+db<-read_feather("mm9-500bp-upstream-7species.mc9nr.feather")
+db2<-db[,c(22059,1:22059)]
+colnames(db2)[1]<-"features"
+write_feather(db2,"mm9-500bp-upstream-7species.mc9nr.feather")
+# Co-expression network
+genesKept <- geneFiltering(exprMat, scenicOptions=scenicOptions,
+                           minCountsPerGene=3*.01*ncol(exprMat),
+                           minSamples=ncol(exprMat)*.01)
+
+exprMat_filtered <- exprMat[genesKept, ]
+dim(exprMat_filtered)
+runCorrelation(exprMat_filtered, scenicOptions)
+exprMat_filtered <- log2(exprMat_filtered+1) 
+runGenie3(exprMat_filtered, scenicOptions)
+save(exprMat_filtered, file = "exprMat_filtered.RData")
+save(scenicOptions, file = "scenicOptions.RData")
+save(exprMat, file = "exprMat.RData")
+
+scenicOptions@settings$verbose <- TRUE
+scenicOptions@settings$nCores <- 1
+scenicOptions@settings$seed <- 123
+scenicOptions@settings$dbs <- scenicOptions@settings$dbs["10kb"]
+
+scenicOptions <- runSCENIC_1_coexNetwork2modules(scenicOptions)
+scenicOptions <- runSCENIC_2_createRegulons(scenicOptions) #** Only for toy run!!
+exprMat_log <- log2(exprMat + 1)
+scenicOptions <- runSCENIC_3_scoreCells(scenicOptions, exprMat_log)
+scenicOptions <- runSCENIC_4_aucell_binarize(scenicOptions)
+saveRDS(scenicOptions, file="int/scenicOptions.Rds") # To save status
+
+
+nPcs <- c(5) # For toy dataset
+# nPcs <- c(5,15,50)
+
+scenicOptions@settings$seed <- 123 # same seed for all of them
+# Run t-SNE with different settings:
+fileNames <- tsneAUC(scenicOptions, aucType="AUC", nPcs=nPcs, perpl=c(5,15,50))
+fileNames <- tsneAUC(scenicOptions, aucType="AUC", nPcs=nPcs, perpl=c(5,15,50), onlyHighConf=TRUE, filePrefix="int/tSNE_oHC")
+# Plot as pdf (individual files in int/):
+fileNames <- paste0("int/",grep(".Rds", grep("tSNE_", list.files("int"), value=T), value=T))
+
+
+par(mfrow=c(length(nPcs), 3))
+fileNames <- paste0("int/",grep(".Rds", grep("tSNE_AUC", list.files("int"), value=T, perl = T), value=T))
+
+
+plotTsne_compareSettings(fileNames, scenicOptions, showLegend=F, varName = scenicOptions@inputDatasetInfo$cellInfo$group,  cex=.5)
+
+
+
+exprMat_log <- exprMat # Better if it is logged/normalized
+aucellApp <- plotTsne_AUCellApp(scenicOptions, exprMat_log) # default t-SNE
+savedSelections <- shiny::runApp(aucellApp)
+
+print(tsneFileName(scenicOptions))
+
+tSNE_scenic <- readRDS(tsneFileName(scenicOptions))
+aucell_regulonAUC <- loadInt(scenicOptions, "aucell_regulonAUC")
+
+# Show TF expression:
+par(mfrow=c(2,2))
+AUCell::AUCell_plotTSNE(tSNE_scenic$Y, exprMat, aucell_regulonAUC[onlyNonDuplicatedExtended(rownames(aucell_regulonAUC))[c(
+  "Tcf7l1")],], plots="Expression")
+AUCell::AUCell_plotTSNE(tSNE_scenic$Y, exprMat, aucell_regulonAUC[onlyNonDuplicatedExtended(rownames(aucell_regulonAUC))[c(
+  "Tead1",  "Tead2")],], plots="Expression")
+
+regulons <- loadInt(scenicOptions, "regulons")
+regulons[c(
+  "Tcf7l1")]
+
+regulons <- loadInt(scenicOptions, "aucell_regulons")
+head(cbind(onlyNonDuplicatedExtended(names(regulons))))
+
+viewMotifs(regulonTargetsInfo, options=list(pageLength=10))
+
+regulonTargetsInfo <- loadInt(scenicOptions, "regulonTargetsInfo")
+tableSubset <- regulonTargetsInfo[TF==c(
+  "Tcf7l1") & highConfAnnot==TRUE]
+viewMotifs(tableSubset, options=list(pageLength=10)) 
+write.csv(tableSubset, "tableSubset.csv", row.names = T, col.names = T)
+
+write.csv(motifEnrichment_selfMotifs_wGenes, "motifEnrichment_selfMotifs_wGenes.csv", row.names = T, col.names = T)
+motifEnrichment_selfMotifs_wGenes <- loadInt(scenicOptions, "motifEnrichment_selfMotifs_wGenes")
+tableSubset <- motifEnrichment_selfMotifs_wGenes[highlightedTFs==c("Tcf7l1")]
+viewMotifs(tableSubset) 
+write.csv(tableSubset, "tableSubset1.csv", row.names = T, col.names = T)
+
+regulonAUC <- loadInt(scenicOptions, "aucell_regulonAUC")
+regulonAUC <- regulonAUC[onlyNonDuplicatedExtended(rownames(regulonAUC)),]
+regulonActivity_byCellType <- sapply(split(rownames(scenicOptions@inputDatasetInfo$cellInfo), scenicOptions@inputDatasetInfo$cellInfo$group),
+                                     function(cells) rowMeans(getAUC(regulonAUC)[,cells]))
+regulonActivity_byCellType_Scaled <- t(scale(t(regulonActivity_byCellType), center = T, scale=T))
+regulonActivity_byCellType_Scaled<- as.matrix(regulonActivity_byCellType_Scaled)
+write.csv(regulonActivity_byCellType_Scaled, "regulonActivity_byCellType_Scaled.csv")
+p1<-ComplexHeatmap::Heatmap(regulonActivity_byCellType_Scaled, name="Regulon activity")
+
+
+topRegulators <- reshape2::melt(regulonActivity_byCellType_Scaled)
+colnames(topRegulators) <- c("Regulon", "group", "RelativeActivity")
+topRegulators <- topRegulators[which(topRegulators$RelativeActivity>0),]
+viewTable(topRegulators)
+
+
+minPerc <- .7
+binaryRegulonActivity <- loadInt(scenicOptions, "aucell_binary_nonDupl")
+cellInfo_binarizedCells <- scenicOptions@inputDatasetInfo$cellInfo[which(rownames(scenicOptions@inputDatasetInfo$cellInfo)%in% colnames(binaryRegulonActivity)),, drop=FALSE]
+regulonActivity_byCellType_Binarized <- sapply(split(rownames(cellInfo_binarizedCells), cellInfo_binarizedCells$group), 
+                                               function(cells) rowMeans(binaryRegulonActivity[,cells, drop=FALSE]))
+binaryActPerc_subset <- regulonActivity_byCellType_Binarized[which(rowSums(regulonActivity_byCellType_Binarized>minPerc)>0),]
+ComplexHeatmap::Heatmap(binaryActPerc_subset, name="Regulon activity (%)", col = c("white","pink","red"))
+
+topRegulators <- reshape2::melt(regulonActivity_byCellType_Binarized)
+colnames(topRegulators) <- c("Regulon", "group", "RelativeActivity")
+topRegulators <- topRegulators[which(topRegulators$RelativeActivity>minPerc),]
+viewTable(topRegulators)
+
+
+# regulonAUC <- loadInt(scenicOptions, "aucell_regulonAUC")
+rss <- calcRSS(AUC=getAUC(regulonAUC), cellAnnotation=scenicOptions@inputDatasetInfo$cellInfo[colnames(regulonAUC), "group"])
+rssPlot <- plotRSS(rss)
+plotly::ggplotly(rssPlot$plot)
+
+
+plotRSS_oneSet(rss, setName = "interneurons")
+
+library(Seurat)
+dr_coords <- Embeddings(scedata, reduction="tsne")
+
+tfs <- c("Tcf7l1")
+par(mfrow=c(2,2))
+AUCell::AUCell_plotTSNE(dr_coords, cellsAUC=selectRegulons(regulonAUC, tfs), plots = "AUC")
+save(dr_coords, file = "dr_coords.RData")
+
+#regulons AUC
+AUCmatrix <- readRDS("int/3.4_regulonAUC.Rds")
+AUCmatrix <- AUCmatrix@assays@data@listData$AUC
+AUCmatrix <- data.frame(t(AUCmatrix), check.names=F)
+RegulonName_AUC <- colnames(AUCmatrix)
+RegulonName_AUC <- gsub(' \\(','_',RegulonName_AUC)
+RegulonName_AUC <- gsub('\\)','',RegulonName_AUC)
+colnames(AUCmatrix) <- RegulonName_AUC
+scRNAauc <- AddMetaData(scedata, AUCmatrix)
+scRNAauc@assays$integrated <- NULL
+saveRDS(scRNAauc,'scRNAauc.rds')
+
+#二进制regulo AUC
+BINmatrix <- readRDS("int/4.1_binaryRegulonActivity.Rds")
+BINmatrix <- data.frame(t(BINmatrix), check.names=F)
+RegulonName_BIN <- colnames(BINmatrix)
+RegulonName_BIN <- gsub(' \\(','_',RegulonName_BIN)
+RegulonName_BIN <- gsub('\\)','',RegulonName_BIN)
+colnames(BINmatrix) <- RegulonName_BIN
+scRNAbin <- AddMetaData(scedata, BINmatrix)
+scRNAbin@assays$integrated <- NULL
+saveRDS(scRNAbin, 'scRNAbin.rds')
+
+FeaturePlot(scRNAauc, features='Tcf7l1_35g', label=T, reduction = 'pca',split.by = "orig.ident")
+
+FeaturePlot(scRNAbin, features='Tcf7l1_35g', label=T, reduction = 'umap',split.by = "orig.ident") 
+
+library(pheatmap)
+celltype = subset(cellInfo,select = 'group')
+AUCmatrix <- t(AUCmatrix)
+BINmatrix <- t(BINmatrix)
+regulons <- c('Rfx2_extended_43g',
+              'Pparg_38g',
+              'Pparg_extended_40g',
+              'Glis1_65g',
+              'Atf3_70g',
+              'Atf3_extended_229g',
+              'Mafg_extended_18g',
+              'Hoxb4_extended_16g',
+              'Elk3_19g',
+              'Elk3_extended_207g',
+              'Erg_67g',
+              'Erg_extended_155g',
+              'Bach2_extended_11g',
+              'Gata6_extended_67g',
+              'Klf4_extended_98g',
+              'Nfatc2_21g',
+              'Nfatc2_extended_44g',
+              'Gata2_extended_90g',
+              'Nr2c1_extended_95g',
+              'Ets1_34g',
+              'Jund_extended_132g',
+              'Fos_extended_217g',
+              'Fosb_96g',
+              'Fosb_extended_177g',
+              'Egr1_10g',
+              'Fos_20g',
+              'Foxn3_extended_10g','Nr2f1_11g',
+              'Nr2f1_extended_16g',
+              'Zfx_extended_11g',
+              'Cbfb_extended_20g',
+              'Pou2f1_17g',
+              'Pou2f1_extended_20g',
+              'Mef2c_extended_264g',
+              'Srebf2_extended_3911g',
+              'Nfatc3_20g',
+              'Tbl1xr1_extended_13g',
+              'Zfp777_12g',
+              'Hif1a_15g',
+              'Klf9_extended_31g',
+              'Nr2f2_extended_15g',
+              'Stat3_extended_15g',
+              'Tef_29g',
+              'Tef_extended_30g',
+              'Mybl1_extended_62g',
+              'Terf1_16g','Tead1_17g','Runx1_extended_10g',
+              'Runx2_155g',
+              'Runx2_extended_165g','Tead2_extended_10g')
+AUCmatrix <- AUCmatrix[rownames(AUCmatrix)%in%regulons,]
+BINmatrix <- BINmatrix[rownames(BINmatrix)%in%regulons,]
+pheatmap(AUCmatrix, show_colnames=F, annotation_col=celltype,
+         width = 6, height = 5)
+pheatmap(BINmatrix, show_colnames=F, annotation_col=celltype,
+         color = colorRampPalette(colors = c("white","black"))(100),
+         width = 6, height = 5,fontsize_row=7)
+
+write.csv(BINmatrix,"BINmatrix.csv")
+BINmatrix1 <- read.csv("BINmatrix.csv")
+BINmatrix=BINmatrix1
+regulons=regulons[1:40]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
