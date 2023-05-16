@@ -699,6 +699,228 @@ regulons=regulons[1:40]
 
 
 
+rm(list=ls())
+library(Seurat)
+library(ggplot2)
+library(patchwork)
+library(dplyr)
+library(hdf5r)
+library(ktplots)
+setwd("F:/博后/肠空间转录组/GSM5213483_V19S23-097_A1")
+#读取数据
+#这里选择“一步到位”的方法：
+data_dir <-"F:/博后/肠空间转录组/GSM5213483_V19S23-097_A1"
+#查看目录中的文件；
+list.files(data_dir)
+#[1] "spatial"
+#[2] "V1_Mouse_Brain_Sagittal_Anterior_filtered_feature_bc_matrix.h5"
+file_name <-"GSM5213483_V19S23-097_A1_S1_filtered_feature_bc_matrix.h5"
+#读入数据并创建Seurat对象；
+A1 <- Load10X_Spatial(data.dir = data_dir, filename = file_name,slice ="A1")
+A1@project.name <-"A1"
+Idents(A1) <-"A1"
+A1$orig.ident <-"A1"
+
+plot1 <- VlnPlot(A1, features = "nCount_Spatial", pt.size = 0.1) + NoLegend()
+plot2 <- SpatialFeaturePlot(A1, features = "nCount_Spatial") + theme(legend.position = "right")
+wrap_plots(plot1, plot2)
+
+
+SpatialFeaturePlot(A1, features = c("Yap1", "Wwtr1"))
+
+p1 <- SpatialFeaturePlot(A1, features = "Yap1", pt.size.factor = 1)
+p2 <- SpatialFeaturePlot(A1, features = "Yap1", alpha = c(0.1, 1))
+p1 + p2
+
+data_dir <-"F:/博后/肠空间转录组/GSM5213484_V19S23-097_B1"
+#查看目录中的文件；
+list.files(data_dir)
+#[1] "spatial"
+#[2] "V1_Mouse_Brain_Sagittal_Anterior_filtered_feature_bc_matrix.h5"
+file_name <-"GSM5213484_V19S23-097_B1_S2_filtered_feature_bc_matrix.h5"
+#读入数据并创建Seurat对象；
+B1 <- Load10X_Spatial(data.dir = data_dir, filename = file_name,slice ="B1")
+B1@project.name <-"B1"
+Idents(B1) <-"B1"
+B1$orig.ident <-"B1"
+plot1 <- VlnPlot(B1, features = "nCount_Spatial", pt.size = 0.1) + NoLegend()
+plot2 <- SpatialFeaturePlot(B1, features = "nCount_Spatial") + theme(legend.position = "right")
+wrap_plots(plot1, plot2)
+
+
+dim(A1)
+dim(B1)
+SpatialFeaturePlot(B1, features = c("Yap1", "Wwtr1"))
+A1 <- SCTransform(A1, assay = "Spatial", verbose = FALSE)
+B1 <- SCTransform(B1, assay = "Spatial", verbose = FALSE)
+
+SpatialFeaturePlot(A1, features = c("Myh11", "Mki67"))
+SpatialFeaturePlot(B1, features = c("Myh11", "Mki67"))
+
+p1 <- SpatialFeaturePlot(A1, features = "Yap1", pt.size.factor = 1)
+p2 <- SpatialFeaturePlot(A1, features = "Yap1", alpha = c(0.1, 1))
+p1 + p2
+
+data.merge <- merge(A1, B1)
+DefaultAssay(data.merge) <- "SCT"
+VariableFeatures(data.merge) <- c(VariableFeatures(A1), VariableFeatures(B1))
+
+data.merge <- RunPCA(data.merge, verbose = FALSE)
+data.merge <- FindNeighbors(data.merge, dims = 1:30)
+data.merge <- FindClusters(data.merge, verbose = FALSE)
+data.merge <- RunUMAP(data.merge, reduction = "pca",dims = 1:30)
+data.merge <- RunTSNE(data.merge, reduction = "pca",dims = 1:30)
+
+p1 <- DimPlot(data.merge, reduction = "umap", label = TRUE)
+p2 <- DimPlot(data.merge, reduction = "tsne", label = TRUE)
+plot_grid(p1, p2)
+
+DimPlot(data.merge, reduction = "umap", label = TRUE, group.by = "orig.ident")
+
+SpatialDimPlot(data.merge, label = TRUE, label.size = 3)
+SpatialDimPlot(data.merge, label = FALSE, label.size = 3)
+
+SpatialFeaturePlot(data.merge, features = c("Myh11"))
+SpatialFeaturePlot(data.merge, features = c("Top2a"))
+FeaturePlot(data.merge, features = c('Hpca','Ttr',"Prkcd",
+                                     "Stx1a"), cols = c("grey", "red"),reduction = "tsne")
+data.merge <- FindSpatiallyVariableFeatures(data.merge, assay = "SCT", features = VariableFeatures(data.merge)[1:1000],
+                                            selection.method = "markvariogram")
+save(data.merge, file = "data.merge.RData")
+
+top.features <- head(SpatiallyVariableFeatures(data.merge, selection.method = "markvariogram"), 20)
+SpatialFeaturePlot(data.merge, features = top.features, ncol = 4, alpha = c(0.1, 1))
+SpatialFeaturePlot(data.merge, features = "Myh11", ncol = 2, alpha = c(0.1, 1))
+
+SpatialFeaturePlot(data.merge, features = "Top2a", ncol = 2, alpha = c(0.1, 1))
+SpatialFeaturePlot(data.merge, features = "Mki67", ncol = 2, alpha = c(0.1, 1))
+
+SpatialFeaturePlot(data.merge, features = "Tagln", ncol = 2, alpha = c(0.1, 1))
+#可以导入基因集去表征
+SpatialDimPlot(data.merge, label = TRUE, label.size = 3)
+
+allen_reference <- load(file = "scedata9.15定群分组去治疗_24.RData")
+library(dplyr)
+allen_reference <- SCTransform(scedata, ncells = 3000, verbose = FALSE) %>%
+  RunPCA(verbose = FALSE) %>%
+  RunUMAP(dims = 1:30)
+
+data.merge <- SCTransform(data.merge, assay = "Spatial", verbose = FALSE) %>%
+  RunPCA(verbose = FALSE)
+# the annotation is stored in the 'subclass' column of object metadata
+DimPlot(allen_reference, group.by = "celltype", label = TRUE)
+
+anchors <- FindTransferAnchors(reference = allen_reference, query = data.merge, normalization.method = "SCT")
+predictions.assay <- TransferData(anchorset = anchors, refdata = allen_reference$celltype, prediction.assay = TRUE,
+                                  weight.reduction = data.merge[["pca"]], dims = 1:30)
+data.merge[["predictions"]] <- predictions.assay
+
+DefaultAssay(data.merge) <- "predictions"
+SpatialFeaturePlot(data.merge, features = c("Macrophage"), 
+                   pt.size.factor = 1.6, ncol = 2, crop = T, combine = T)
+DefaultAssay(data.merge) <- "Spatial"
+SpatialFeaturePlot(data.merge, features = "Myh11", pt.size.factor = 1.6, ncol = 2, crop = T)
+
+
+SpatialFeaturePlot(data.merge, features = "Myh11", ncol = 2, alpha = c(0.1, 1))
+
+SpatialFeaturePlot(data.merge, features = "Wnt4", ncol = 2, alpha = c(0.1, 1))
+SpatialFeaturePlot(data.merge, features = "Mki67", ncol = 2, alpha = c(0.1, 1))
+
+SpatialFeaturePlot(data.merge, features = "Tagln", ncol = 2, alpha = c(0.1, 1))
+SpatialFeaturePlot(data.merge, features = "Yap1", ncol = 2, alpha = c(0.1, 1))
+SpatialFeaturePlot(data.merge, features = "Wwtr1", ncol = 2, alpha = c(0.1, 1))
+SpatialFeaturePlot(data.merge, features = "Cyr61", ncol = 2, alpha = c(0.1, 1))
+SpatialFeaturePlot(data.merge, features = "Csf1r", ncol = 2, alpha = c(0.1, 1))
+
+save(data.merge, file = "data.merge.RData")
+DefaultAssay(data.merge) <- "SCT"
+data.markers <- FindAllMarkers(data.merge, 
+                               only.pos = FALSE, min.pct = 0.25, logfc.threshold = 0.25,test.use = "wilcox")
+
+
+write.csv(data.markers, "data.markers.csv")
+
+SpatialDimPlot(data.merge, cells.highlight = CellsByIdentities(object =
+                                                                 data.merge, idents = c(0, 1, 2, 3, 4, 5,6,7,8,
+                                                                                        9,10,11,12,13
+                                                                 )), facet.highlight = TRUE, ncol = 5)
+
+library(Matrix)
+load(file="data.merge.RData")
+
+
+pvals <- read.delim("pvalues.txt", check.names = FALSE)
+means <- read.delim("means.txt", check.names = FALSE)
+sig_means <- read.delim("significant_means.txt", check.names = FALSE)
+decon <- read.delim("deconvoluted.txt", check.names = FALSE)
+#将seurat对象转换为singlecellexperiment对象
+scedata.sce<- as.SingleCellExperiment(scedata)
+
+'celltype'
+plot_cpdb(cell_type1 = 'TA cells', cell_type2 = 'SMCs', scdata = scedata.sce,
+          idents = 'celltype' , # column name where the cell ids are located in the metadata
+          means = means, pvals = pvals,
+          genes = c("Wnt4", "Lrp5")) +
+  small_axis(fontsize = 3) + small_grid() + small_guide() + small_legend(fontsize = 2) # some helper functions included in ktplots to help with the plotting
+
+plot_cpdb(cell_type1 = 'TA cells', cell_type2 = 'SMCs', scdata = scedata.sce,
+          idents = 'celltype', means = means, pvals = pvals, split.by = 'Experiment',
+          gene.family = 'chemokines') + small_guide() + small_axis() + small_legend(keysize=.5)
+
+
+plot_cpdb(cell_type1 = 'TA cells', cell_type2 = 'SMCs', scdata = scedata.sce,
+          idents = 'celltype', means = means, pvals = pvals, split.by = 'Experiment',
+          gene.family = 'chemokines', col_option = "maroon", highlight = "blue") + small_guide() + small_axis() + small_legend(keysize=.5)
+
+plot_cpdb(cell_type1 = 'TA cells', cell_type2 = 'SMCs', scdata = scedata.sce,
+          idents = 'celltype', means = means, pvals = pvals, split.by = 'Experiment',
+          gene.family = 'chemokines', col_option = viridis::cividis(50)) + small_guide() + small_axis() + small_legend(keysize=.5)
+
+plot_cpdb(cell_type1 = 'TA cells', cell_type2 = 'SMCs', scdata = scedata.sce,
+          idents = 'celltype', means = means, pvals = pvals, split.by = 'Experiment',
+          gene.family = 'chemokines', default_style = FALSE) + small_guide() + small_axis() + small_legend(keysize=.5)
+
+
+plot_cpdb("TA cells", "SMCs", scedata.sce, "celltype", means, pvals,
+          split.by = "Experiment", gene.family = c("Coinhibitory", "Costimulatory"),
+          cluster_rows = FALSE, # ensures that the families are separate
+          keep_significant_only = T)
+
+
+df = data.frame(set1 = c("CCR6", "CCL20"), set2 = c("CCL5", "CCR4"))
+plot_cpdb("TA cells", "SMCs", scedata.sce, "celltype", means, pvals,
+          split.by = "Experiment",  gene.family = c("set1", "set2"), custom_gene_family =df,
+          keep_significant_only = F)
+
+annotation <- paste0(scedata.sce$groups, '_', scedata.sce$celltype)
+
+
+# Note, this conflicts with tidyr devel version
+geneDotPlot(scdata = scedata.sce, # object
+            genes = c("Wnt4", "Lrp5", "Lrp6"), # genes to plot
+            idents = "celltype", # column name in meta data that holds the cell-cluster ID/assignment
+            split.by = 'Experiment', # column name in the meta data that you want to split the plotting by. If not provided, it will just plot according to idents
+            standard_scale = TRUE) + # whether to scale expression values from 0 to 1. See ?geneDotPlot for other options
+  theme(strip.text.x = element_text(angle=0, hjust = 0, size =7)) + small_guide() + small_legend()
+
+
+
+library(ggplot2)
+scedata <- Seurat::SCTransform(scedata, verbose = FALSE) %>% Seurat::RunPCA(., verbose = FALSE) %>% Seurat::RunUMAP(., dims = 1:30, verbose = FALSE)
+anchors <- Seurat::FindTransferAnchors(reference = scedata, query = data.merge, normalization.method = "SCT")
+predictions.assay <- Seurat::TransferData(anchorset = anchors, refdata = scedata$celltype, dims = 1:30, prediction.assay = TRUE, weight.reduction = data.merge[["pca"]])
+data.merge[["predictions"]] <- predictions.assay
+Seurat::DefaultAssay(data.merge) <- "predictions"
+Seurat::DefaultAssay(data.merge) <- 'SCT'
+pa <- Seurat::SpatialFeaturePlot(data.merge, features = c('Wnt4', 'Lrp5'), pt.size.factor = 1.6, ncol = 2, crop = TRUE) + viridis::scale_fill_viridis()
+Seurat::DefaultAssay(data.merge) <- 'predictions'
+pb <- Seurat::SpatialFeaturePlot(data.merge, features = c('TA cells', 'SMCs'), pt.size.factor = 1.6, ncol = 2, crop = TRUE) + viridis::scale_fill_viridis()
+
+p1 <- correlationSpot(data.merge, genes = c('Wnt4', 'Lrp5'), celltypes = c('TA cells', 'SMCs'), pt.size.factor = 1.6, ncol = 2, crop = TRUE) + scale_fill_gradientn( colors = rev(RColorBrewer::brewer.pal(12, 'Spectral')),limits = c(-1, 1))
+p2 <- correlationSpot(data.merge, genes = c('Wnt4', 'Lrp5'), celltypes = c('TA cells', 'SMCs'), pt.size.factor = 1.6, ncol = 2, crop = TRUE, average_by_cluster = TRUE) + scale_fill_gradientn(colors = rev(RColorBrewer::brewer.pal(12, 'Spectral')),limits = c(-1, 1)) + ggtitle('correlation averaged across clusters')
+
+cowplot::plot_grid(pa, pb, p1, p2, ncol = 2)
 
 
 
